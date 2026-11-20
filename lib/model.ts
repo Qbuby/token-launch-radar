@@ -368,6 +368,46 @@ function secondaryAction(p: SnapshotProtocol, capital: number, chain: string): s
 }
 
 /**
+ * The weekly qualifying action, different for each kind of protocol: the points
+ * program counts a repeat of the protocol's own activity, not a generic deposit.
+ */
+function weeklyActionFor(p: SnapshotProtocol, capital: number, chain: string): string {
+  const c = (p.category ?? '').toLowerCase();
+  const name = p.name;
+  const small = Math.max(10, Math.round(capital / 5));
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Supply or borrow a little more on ${name} each week, and keep the health factor in the safe range.`;
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return `Swap $${small} through ${name}'s main pool on ${chain} each week and leave the receipt in the wallet.`;
+  if (c.includes('bridge')) return `Bridge $${small} through ${name} each week, alternating direction, so the account shows repeat use.`;
+  if (c.includes('staking') || c.includes('restak')) return `Check the staking rewards on ${name} each week and compound them once a month.`;
+  if (c.includes('perpetual') || c.includes('derivative')) return `Open and close one small hedge on ${name} each week, keeping the margin in the position.`;
+  if (c.includes('prediction')) return `Place one small market position on ${name} each week, in a different market each time.`;
+  if (c.includes('curator') || c.includes('allocator')) return `Rebalance $${small} between ${name} vaults on ${chain} each week so the account shows allocation choices.`;
+  if (c.includes('stable')) return `Mint or redeem $${small} of the stable asset through ${name} on ${chain} each week.`;
+  if (c.includes('rwa')) return `Check the yield asset's rate on ${name} each week and add $${small} when the rate holds.`;
+  if (c.includes('insurance')) return `Request a fresh cover quote on ${name} each week so the account shows repeat interest.`;
+  if (c.includes('chain')) return `Send one transaction on ${chain} through ${name}'s own app each week and keep the receipt.`;
+  return `Do one qualifying action inside ${name} on ${chain} each week, such as a deposit, a borrow, a swap or a vote.`;
+}
+
+/** The closing note, different for each kind of protocol: how to unwind safely. */
+function closingNoteFor(p: SnapshotProtocol, chain: string): string {
+  const c = (p.category ?? '').toLowerCase();
+  const name = p.name;
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return `Before you unwind, repay any borrow on ${name} and check the position is back to supply only.`;
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')) return `Before you unwind, remove the liquidity from ${name} on ${chain} and keep the pool receipts.`;
+  if (c.includes('bridge')) return `Before you unwind, bridge the funds back to the chain you started from through ${name}.`;
+  if (c.includes('staking') || c.includes('restak')) return `Before you unwind, unstake through ${name} and check the receipt token is back in the wallet.`;
+  if (c.includes('perpetual') || c.includes('derivative')) return `Before you unwind, close every open position on ${name} and withdraw the margin.`;
+  if (c.includes('prediction')) return `Before you unwind, settle every open market on ${name} and withdraw the balance.`;
+  if (c.includes('curator') || c.includes('allocator')) return `Before you unwind, exit the ${name} vaults on ${chain} and keep the share receipts.`;
+  if (c.includes('stable')) return `Before you unwind, redeem the stable asset through ${name} on ${chain} back to USDC.`;
+  if (c.includes('rwa')) return `Before you unwind, redeem the yield asset on ${name} and confirm the exit works.`;
+  if (c.includes('insurance')) return `Before you unwind, check the cover on ${name} has expired or cancel it if the policy allows.`;
+  if (c.includes('chain')) return `Before you unwind, move the funds off ${chain} through ${name}'s own app.`;
+  return `Before you unwind, exit the position inside ${name} on ${chain} and keep every receipt.`;
+}
+
+/**
  * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is
  * derived from the protocol's own record (category, chains, TVL, age), never from a
  * hand-written list of names.
@@ -378,6 +418,8 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const hold = holdDays(age);
   const first = primaryAction(p, capital, chain);
   const second = secondaryAction(p, capital, chain);
+  const weekly = weeklyActionFor(p, capital, chain);
+  const closing = closingNoteFor(p, chain);
   const weeklyGas = 2;
   const setupGas = capital >= 150 ? 8 : 4;
   const secondGas = Math.max(2, Math.round(capital / 25));
@@ -398,7 +440,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '10 minutes',
     },
     {
-      text: `Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.`,
+      text: weekly,
       cost: `about $${weeklyGas} of gas a week`,
       time: '10 minutes a week',
     },
@@ -413,7 +455,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '10 minutes',
     },
     {
-      text: `Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.`,
+      text: `${closing} Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.`,
       cost: 'nothing but the log',
       time: '5 minutes',
     },

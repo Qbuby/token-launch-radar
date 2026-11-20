@@ -171,6 +171,39 @@
     if (c.indexOf('chain') >= 0) return 'Send one transaction on ' + chain + ' through ' + name + "'s own app and keep the receipt.";
     return 'Do one more action inside ' + name + ' on ' + chain + ', such as a swap or a vote, for $' + small + '.';
   }
+  function weeklyAction(p, capital, chain) {
+    var c = (p.category || '').toLowerCase();
+    var name = p.name;
+    var small = Math.max(10, Math.round(capital / 5));
+    if (c.indexOf('lend') >= 0 || c.indexOf('cdp') >= 0 || c.indexOf('collateral') >= 0) return 'Supply or borrow a little more on ' + name + ' each week, and keep the health factor in the safe range.';
+    if (c.indexOf('dex') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('leveraged farm') >= 0) return 'Swap $' + small + " through " + name + "'s main pool on " + chain + ' each week and leave the receipt in the wallet.';
+    if (c.indexOf('bridge') >= 0) return 'Bridge $' + small + ' through ' + name + ' each week, alternating direction, so the account shows repeat use.';
+    if (c.indexOf('staking') >= 0 || c.indexOf('restak') >= 0) return 'Check the staking rewards on ' + name + ' each week and compound them once a month.';
+    if (c.indexOf('perpetual') >= 0 || c.indexOf('derivative') >= 0) return 'Open and close one small hedge on ' + name + ' each week, keeping the margin in the position.';
+    if (c.indexOf('prediction') >= 0) return 'Place one small market position on ' + name + ' each week, in a different market each time.';
+    if (c.indexOf('curator') >= 0 || c.indexOf('allocator') >= 0) return 'Rebalance $' + small + ' between ' + name + ' vaults on ' + chain + ' each week so the account shows allocation choices.';
+    if (c.indexOf('stable') >= 0) return 'Mint or redeem $' + small + ' of the stable asset through ' + name + ' on ' + chain + ' each week.';
+    if (c.indexOf('rwa') >= 0) return 'Check the yield asset\'s rate on ' + name + ' each week and add $' + small + ' when the rate holds.';
+    if (c.indexOf('insurance') >= 0) return 'Request a fresh cover quote on ' + name + ' each week so the account shows repeat interest.';
+    if (c.indexOf('chain') >= 0) return 'Send one transaction on ' + chain + " through " + name + "'s own app each week and keep the receipt.";
+    return 'Do one qualifying action inside ' + name + ' on ' + chain + ' each week, such as a deposit, a borrow, a swap or a vote.';
+  }
+  function closingNote(p, chain) {
+    var c = (p.category || '').toLowerCase();
+    var name = p.name;
+    if (c.indexOf('lend') >= 0 || c.indexOf('cdp') >= 0 || c.indexOf('collateral') >= 0) return 'Before you unwind, repay any borrow on ' + name + ' and check the position is back to supply only.';
+    if (c.indexOf('dex') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('leveraged farm') >= 0) return 'Before you unwind, remove the liquidity from ' + name + ' on ' + chain + ' and keep the pool receipts.';
+    if (c.indexOf('bridge') >= 0) return 'Before you unwind, bridge the funds back to the chain you started from through ' + name + '.';
+    if (c.indexOf('staking') >= 0 || c.indexOf('restak') >= 0) return 'Before you unwind, unstake through ' + name + ' and check the receipt token is back in the wallet.';
+    if (c.indexOf('perpetual') >= 0 || c.indexOf('derivative') >= 0) return 'Before you unwind, close every open position on ' + name + ' and withdraw the margin.';
+    if (c.indexOf('prediction') >= 0) return 'Before you unwind, settle every open market on ' + name + ' and withdraw the balance.';
+    if (c.indexOf('curator') >= 0 || c.indexOf('allocator') >= 0) return 'Before you unwind, exit the ' + name + ' vaults on ' + chain + ' and keep the share receipts.';
+    if (c.indexOf('stable') >= 0) return 'Before you unwind, redeem the stable asset through ' + name + ' on ' + chain + ' back to USDC.';
+    if (c.indexOf('rwa') >= 0) return 'Before you unwind, redeem the yield asset on ' + name + ' and confirm the exit works.';
+    if (c.indexOf('insurance') >= 0) return 'Before you unwind, check the cover on ' + name + ' has expired or cancel it if the policy allows.';
+    if (c.indexOf('chain') >= 0) return 'Before you unwind, move the funds off ' + chain + " through " + name + "'s own app.";
+    return 'Before you unwind, exit the position inside ' + name + ' on ' + chain + ' and keep every receipt.';
+  }
   function buildFarmSteps(p) {
     var chain = firstChain(p);
     var capital = stakeFor(p);
@@ -181,10 +214,10 @@
       { text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', cost: 'under $3 of gas for the first transaction', time: '5 minutes' },
       { text: primaryAction(p, capital, chain), cost: '$' + capital + ' of capital and about $' + setupGas + ' of gas', time: '15 minutes to set up' },
       { text: secondaryAction(p, capital, chain), cost: 'about $' + secondGas + ' of gas', time: '10 minutes' },
-      { text: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', cost: 'about $2 of gas a week', time: '10 minutes a week' },
+      { text: weeklyAction(p, capital, chain), cost: 'about $2 of gas a week', time: '10 minutes a week' },
       { text: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', cost: 'the $' + capital + ' stays in the position', time: hold + ' days' },
       { text: "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.", cost: 'no fee to check, and never pay to claim', time: '10 minutes' },
-      { text: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' }
+      { text: closingNote(p, chain) + ' Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' }
     ].map(formatStep);
   }
 
@@ -436,6 +469,47 @@
     );
   }
 
+  function categoryPanel() {
+    var byCategory = {};
+    DATA.rows.forEach(function (r) {
+      var key = r.category || 'Other';
+      if (!byCategory[key]) byCategory[key] = { count: 0, tvl: 0, implied: 0, top: null };
+      var entry = byCategory[key];
+      entry.count += 1;
+      entry.tvl += r.tvl_usd;
+      entry.implied += r.implied_value_usd;
+      if (!entry.top || r.implied_value_usd > entry.top.implied_value_usd) entry.top = r;
+    });
+    var keys = Object.keys(byCategory).sort(function (a, b) { return byCategory[b].implied - byCategory[a].implied; });
+    var tbody = el('tbody');
+    keys.forEach(function (key) {
+      var entry = byCategory[key];
+      tbody.appendChild(el('tr', null,
+        el('td', null, el('b', { text: key })),
+        el('td', { class: 'num', text: String(entry.count) }),
+        el('td', { class: 'num', text: formatUsd(entry.tvl) }),
+        el('td', { class: 'num', text: formatUsd(entry.implied) }),
+        el('td', null, el('span', { text: entry.top ? entry.top.name : 'n/a' }))
+      ));
+    });
+    return el('section', { class: 'panel' },
+      el('h2', { text: 'Where the implied value sits' }),
+      el('p', { class: 'sub', text: 'Pre-token rows grouped by category, strongest implied value first. The ranking itself never uses the category — this is only a way to read the board.' }),
+      el('div', { class: 'table-wrap' },
+        el('table', null,
+          el('thead', null, el('tr', null,
+            el('th', { scope: 'col', text: 'Category' }),
+            el('th', { scope: 'col', text: 'Rows' }),
+            el('th', { scope: 'col', text: 'Total TVL' }),
+            el('th', { scope: 'col', text: 'Total implied' }),
+            el('th', { scope: 'col', text: 'Top protocol' })
+          )),
+          tbody
+        )
+      )
+    );
+  }
+
   function sandboxPanel() {
     function slider(id, label, min, max, step, value, onInput) {
       var input = el('input', { type: 'range', id: id, min: String(min), max: String(max), step: String(step), value: String(value), 'aria-label': label });
@@ -542,6 +616,7 @@
     if (state.tab === 'pre-token') {
       shell.appendChild(modelExplainer());
       shell.appendChild(sandboxPanel());
+      shell.appendChild(categoryPanel());
     }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
