@@ -271,6 +271,10 @@
       } else if (key === 'age') {
         av = a.age_days === null ? Infinity : a.age_days;
         bv = b.age_days === null ? Infinity : b.age_days;
+      } else if (key === 'efficiency') {
+        // Implied value per $1M of TVL: the highest-upside protocols for their size.
+        av = effectiveImplied(a) / Math.max(1, a.tvl_usd / 1000000);
+        bv = effectiveImplied(b) / Math.max(1, b.tvl_usd / 1000000);
       } else {
         // The implied sort follows the sandbox when it is active.
         av = effectiveImplied(a);
@@ -326,12 +330,22 @@
     );
     chainSelect.addEventListener('change', function () { state.chain = chainSelect.value; writeStateToHash(); draw(); });
     var watchToggle = el('button', { type: 'button', 'aria-pressed': state.watchlistOnly ? 'true' : 'false', text: state.watchlistOnly ? 'Watchlist only: on' : 'Watchlist only', onclick: function () { state.watchlistOnly = !state.watchlistOnly; writeStateToHash(); draw(); } });
+    var sortSelect = el('select', { id: 'sort', 'aria-label': 'Sort the board' },
+      el('option', { value: 'implied', text: 'Implied value', selected: state.sort === 'implied' ? 'selected' : null }),
+      el('option', { value: 'efficiency', text: 'Implied per $1M TVL', selected: state.sort === 'efficiency' ? 'selected' : null }),
+      el('option', { value: 'tvl', text: 'TVL', selected: state.sort === 'tvl' ? 'selected' : null }),
+      el('option', { value: 'growth', text: 'Seven-day growth', selected: state.sort === 'growth' ? 'selected' : null }),
+      el('option', { value: 'age', text: 'Age with no token', selected: state.sort === 'age' ? 'selected' : null }),
+      el('option', { value: 'name', text: 'Name A to Z', selected: state.sort === 'name' ? 'selected' : null })
+    );
+    sortSelect.addEventListener('change', function () { state.sort = sortSelect.value; state.dir = -1; draw(); });
     var pre = el('button', { type: 'button', 'aria-pressed': state.tab === 'pre-token' ? 'true' : 'false', text: 'Pre-token', onclick: function () { state.tab = 'pre-token'; draw(); } });
     var live = el('button', { type: 'button', 'aria-pressed': state.tab === 'live' ? 'true' : 'false', text: 'Live token', onclick: function () { state.tab = 'live'; draw(); } });
     return el('div', { class: 'controls' },
       el('div', { class: 'field' }, el('label', { for: 'q', text: 'Search' }), search),
       el('div', { class: 'field' }, el('label', { for: 'category', text: 'Category' }), select),
       el('div', { class: 'field' }, el('label', { for: 'chain', text: 'Chain' }), chainSelect),
+      el('div', { class: 'field' }, el('label', { for: 'sort', text: 'Sort by' }), sortSelect),
       el('div', { class: 'field' }, el('span', { class: 'sub', text: 'Scope' }), watchToggle),
       el('div', { class: 'field' }, el('span', { class: 'sub', text: 'Token status' }), el('div', { class: 'tabs' }, pre, live)),
       el('span', { class: 'count', text: state.tab === 'pre-token' ? visibleRows().length + ' rows shown' : DATA.live.length + ' live-token protocols' })
@@ -510,6 +524,47 @@
     );
   }
 
+  function chainPanel() {
+    var byChain = {};
+    DATA.rows.forEach(function (r) {
+      var key = firstChain(r);
+      if (!byChain[key]) byChain[key] = { count: 0, tvl: 0, implied: 0, top: null };
+      var entry = byChain[key];
+      entry.count += 1;
+      entry.tvl += r.tvl_usd;
+      entry.implied += r.implied_value_usd;
+      if (!entry.top || r.implied_value_usd > entry.top.implied_value_usd) entry.top = r;
+    });
+    var keys = Object.keys(byChain).sort(function (a, b) { return byChain[b].implied - byChain[a].implied; });
+    var tbody = el('tbody');
+    keys.forEach(function (key) {
+      var entry = byChain[key];
+      tbody.appendChild(el('tr', null,
+        el('td', null, el('b', { text: key })),
+        el('td', { class: 'num', text: String(entry.count) }),
+        el('td', { class: 'num', text: formatUsd(entry.tvl) }),
+        el('td', { class: 'num', text: formatUsd(entry.implied) }),
+        el('td', null, el('span', { text: entry.top ? entry.top.name : 'n/a' }))
+      ));
+    });
+    return el('section', { class: 'panel' },
+      el('h2', { text: 'Where the implied value lives, by chain' }),
+      el('p', { class: 'sub', text: 'Each row counts once, under its first chain. The ranking itself never uses the chain — this is only a way to read the board.' }),
+      el('div', { class: 'table-wrap' },
+        el('table', null,
+          el('thead', null, el('tr', null,
+            el('th', { scope: 'col', text: 'Chain' }),
+            el('th', { scope: 'col', text: 'Rows' }),
+            el('th', { scope: 'col', text: 'Total TVL' }),
+            el('th', { scope: 'col', text: 'Total implied' }),
+            el('th', { scope: 'col', text: 'Top protocol' })
+          )),
+          tbody
+        )
+      )
+    );
+  }
+
   function sandboxPanel() {
     function slider(id, label, min, max, step, value, onInput) {
       var input = el('input', { type: 'range', id: id, min: String(min), max: String(max), step: String(step), value: String(value), 'aria-label': label });
@@ -567,11 +622,17 @@
     var why = growthNote + ageNote;
     var recomputed = recomputeImplied(row, DATA.model);
     var recomputeNote = recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.';
+    // Where this row stands inside its own category, by implied value.
+    var sameCategory = DATA.rows.filter(function (r) { return (r.category || 'Other') === (row.category || 'Other'); });
+    sameCategory.sort(function (a, b) { return b.implied_value_usd - a.implied_value_usd; });
+    var categoryRank = 0;
+    sameCategory.forEach(function (r, i) { if (r.slug === row.slug) categoryRank = i + 1; });
+    var categoryNote = categoryRank > 0 ? ' It ranks #' + categoryRank + ' of ' + sameCategory.length + ' in ' + (row.category || 'Other') + ' by implied value.' : '';
     dialog.appendChild(el('div', { class: 'detail-head' },
       el('div', null,
         el('span', { class: 'brand-name', text: 'Rank ' + row.rank + ' of ' + DATA.board_size }),
         el('h2', { id: 'detail-title', text: row.name }),
-        el('p', { class: 'sub', text: (row.category || 'Other') + ' on ' + (row.chains && row.chains.length ? row.chains.join(', ') : 'an unnamed chain') })
+        el('p', { class: 'sub', text: (row.category || 'Other') + ' on ' + (row.chains && row.chains.length ? row.chains.join(', ') : 'an unnamed chain') + categoryNote })
       ),
       el('button', { class: 'close', type: 'button', 'aria-label': 'Close details', text: 'Close', onclick: function () { dialog.close(); } })
     ));
@@ -617,6 +678,7 @@
       shell.appendChild(modelExplainer());
       shell.appendChild(sandboxPanel());
       shell.appendChild(categoryPanel());
+      shell.appendChild(chainPanel());
     }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
