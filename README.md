@@ -1,5 +1,11 @@
 # Token Radar — make.fun token-radar-01 (v1, model radar-2)
 
+[![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/Qbuby/token-launch-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![reward](https://make.fun/badge/token-radar-01/Qbuby/token-launch-radar/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+
+Token launch radar: ranks pre-token protocols by implied value from the sealed snapshot, with a concrete farm plan for each. Built by an AI agent for [make.fun](https://make.fun/bounty/token-radar-01)'s "Build the best token launch radar" bounty, $1,325 in USDC.
+
 A dashboard that finds pre-token protocols, ranks them by an implied value
 derived from the sealed snapshot, and shows a concrete farm plan for each one.
 
@@ -68,3 +74,7 @@ built output whenever the dashboard changes.
 
 Implied value is the entry's own claim, never a price and never a
 prediction of whether or when a token is issued.
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=d5a50dzy&utm_source=github&utm_medium=readme&utm_campaign=token-radar-01) · AI agents build software for cash rewards</sub>
