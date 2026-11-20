@@ -18,6 +18,36 @@
     dir: -1,
     selected: null
   };
+  // The model sandbox: the reader's own parameters, starting at the house model's.
+  // Nothing here touches board.json — the house model is what the entry was scored on.
+  var sandbox = {
+    base: DATA.model.base_multiple,
+    growthWeight: DATA.model.growth_weight,
+    maturityFloor: DATA.model.maturity_floor,
+    active: false
+  };
+  function sandboxModel() {
+    return {
+      base_multiple: sandbox.base,
+      growth_weight: sandbox.growthWeight,
+      growth_floor: DATA.model.growth_floor,
+      growth_cap: DATA.model.growth_cap,
+      maturity_floor: sandbox.maturityFloor,
+      maturity_range: DATA.model.maturity_range,
+      maturity_days: DATA.model.maturity_days,
+      unknown_age_days: DATA.model.unknown_age_days
+    };
+  }
+  function effectiveImplied(row) {
+    if (!sandbox.active) return row.implied_value_usd;
+    return recomputeImplied(row, sandboxModel());
+  }
+  function resetSandbox() {
+    sandbox.base = DATA.model.base_multiple;
+    sandbox.growthWeight = DATA.model.growth_weight;
+    sandbox.maturityFloor = DATA.model.maturity_floor;
+    sandbox.active = false;
+  }
 
   var usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   function formatUsd(n) {
@@ -209,8 +239,9 @@
         av = a.age_days === null ? Infinity : a.age_days;
         bv = b.age_days === null ? Infinity : b.age_days;
       } else {
-        av = a.implied_value_usd;
-        bv = b.implied_value_usd;
+        // The implied sort follows the sandbox when it is active.
+        av = effectiveImplied(a);
+        bv = effectiveImplied(b);
       }
       if (av < bv) return -state.dir;
       if (av > bv) return state.dir;
@@ -288,13 +319,21 @@
   }
 
   function topLeaders() {
-    var top = DATA.rows.slice(0, 3);
+    var ranked = DATA.rows.slice().sort(function (a, b) {
+      var diff = effectiveImplied(b) - effectiveImplied(a);
+      if (diff !== 0) return diff;
+      if (a.slug < b.slug) return -1;
+      if (a.slug > b.slug) return 1;
+      return 0;
+    });
+    var top = ranked.slice(0, 3);
     return el('section', { class: 'leaders', 'aria-label': 'Top three by implied value' },
-      top.map(function (r) {
+      top.map(function (r, i) {
+        var shownRank = sandbox.active ? i + 1 : r.rank;
         return el('button', { type: 'button', class: 'leader', onclick: function () { showDetail(r.slug); } },
-          el('span', { class: 'leader-rank', text: '#' + r.rank }),
+          el('span', { class: 'leader-rank', text: '#' + shownRank }),
           el('b', { text: r.name }),
-          el('span', { class: 'leader-value num', text: formatUsd(r.implied_value_usd) }),
+          el('span', { class: 'leader-value num', text: formatUsd(effectiveImplied(r)) }),
           el('span', { class: 'sub', text: 'TVL ' + formatUsd(r.tvl_usd) + '  ·  7d ' + formatPct(r.change_7d) + '  ·  ' + (r.category || 'Other') })
         );
       })
@@ -310,13 +349,15 @@
         el('button', { class: 'button primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; writeStateToHash(); draw(); } })
       ));
     }
-    var max = list[0].implied_value_usd || 1;
+    var max = 1;
+    list.forEach(function (r) { if (effectiveImplied(r) > max) max = effectiveImplied(r); });
     var tbody = el('tbody');
     list.forEach(function (r) {
       var growth = r.change_7d === null ? 'n/a' : formatPct(r.change_7d);
       var growthClass = r.change_7d === null ? '' : r.change_7d >= 0 ? 'pos' : 'neg';
       var chainsText = r.chains && r.chains.length ? r.chains.slice(0, 2).join(', ') : 'an unnamed chain';
-      var barWidth = Math.max(3, Math.round((r.implied_value_usd / max) * 100));
+      var shownImplied = effectiveImplied(r);
+      var barWidth = Math.max(3, Math.round((shownImplied / max) * 100));
       var tr = el('tr', {
         'data-selected': state.selected === r.slug ? 'true' : 'false',
         tabindex: '0',
@@ -333,7 +374,7 @@
         el('td', { class: 'num', text: formatAge(r.age_days) }),
         el('td', null, el('div', { class: 'implied' },
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + barWidth + '%' })),
-          el('span', { class: 'num', text: formatUsd(r.implied_value_usd) })
+          el('span', { class: 'num', text: formatUsd(shownImplied) })
         )),
         el('td', null, el('span', { class: 'status', text: 'no token' }))
       );
@@ -392,6 +433,34 @@
         'implied = round( tvl_usd x ' + m.base_multiple + ' x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') )'
       ),
       el('p', { class: 'sub', text: 'TVL and seven-day growth come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. The early radar is every pre-token protocol below the watchlist floor, by TVL, and the live-token protocols are set aside with their market caps shown.' })
+    );
+  }
+
+  function sandboxPanel() {
+    function slider(id, label, min, max, step, value, onInput) {
+      var input = el('input', { type: 'range', id: id, min: String(min), max: String(max), step: String(step), value: String(value), 'aria-label': label });
+      var out = el('b', { class: 'num', text: String(value) });
+      input.addEventListener('input', function () {
+        out.textContent = input.value;
+        onInput(Number(input.value));
+      });
+      return el('div', { class: 'field' },
+        el('label', { for: id, text: label }),
+        input,
+        out
+      );
+    }
+    var note = el('p', { class: 'sub', text: sandbox.active ? 'Sandbox on: the table and leaders re-rank with your parameters. board.json still carries the house model.' : 'Move a slider to try your own model: the table and leaders re-rank live. board.json still carries the house model.' });
+    var reset = el('button', { class: 'button', type: 'button', text: 'Reset to house model', onclick: function () { resetSandbox(); draw(); } });
+    return el('section', { class: 'panel model' },
+      el('h2', { text: 'Model sandbox — try your own parameters' }),
+      note,
+      el('div', { class: 'sandbox' },
+        slider('sb-base', 'Base multiple (TVL share)', 0.1, 0.5, 0.01, sandbox.base, function (v) { sandbox.base = v; sandbox.active = true; draw(); }),
+        slider('sb-growth', 'Growth weight', 0, 1.5, 0.05, sandbox.growthWeight, function (v) { sandbox.growthWeight = v; sandbox.active = true; draw(); }),
+        slider('sb-maturity', 'Maturity floor', 0.3, 0.8, 0.01, sandbox.maturityFloor, function (v) { sandbox.maturityFloor = v; sandbox.active = true; draw(); })
+      ),
+      reset
     );
   }
 
@@ -470,7 +539,10 @@
     shell.appendChild(topLeaders());
     shell.appendChild(filterControls());
     shell.appendChild(state.tab === 'pre-token' ? preTokenTable() : liveTokenTable());
-    if (state.tab === 'pre-token') shell.appendChild(modelExplainer());
+    if (state.tab === 'pre-token') {
+      shell.appendChild(modelExplainer());
+      shell.appendChild(sandboxPanel());
+    }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
     if (!dialog.isConnected) app.appendChild(dialog);
